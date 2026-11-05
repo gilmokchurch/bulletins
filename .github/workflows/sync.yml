@@ -1,0 +1,54 @@
+# 매시간 블로그의 새 주보 PDF를 복사하고, GitHub Pages로 내보냅니다.
+name: 주보 복사
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 새 주보 내려받기
+        run: python3 sync.py pdf
+
+      - name: 바뀐 것 저장
+        id: save
+        run: |
+          git add pdf
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "새 주보 복사"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.save.outputs.changed == 'true' || github.event_name != 'schedule'
+        uses: actions/configure-pages@v5
+
+      - if: steps.save.outputs.changed == 'true' || github.event_name != 'schedule'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - if: steps.save.outputs.changed == 'true' || github.event_name != 'schedule'
+        uses: actions/deploy-pages@v4
