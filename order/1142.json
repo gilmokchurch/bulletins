@@ -122,12 +122,54 @@
      "name": "말씀읽기",
      "detail": "베드로후서 3:17-18",
      "who": "다같이 교독",
-     "scripture": true
+     "scripture": true,
+     "bible": [
+      {
+       "ref": "베드로후서 3:17-18",
+       "version": "개역개정",
+       "verses": [
+        [
+         "17",
+         "그러므로 사랑하는 자들아 너희가 이것을 미리 알았은즉 무법한 자들의 미혹에 이끌려 너희가 굳센 데서 떨어질까 삼가라"
+        ],
+        [
+         "18",
+         "오직 우리 주 곧 구주 예수 그리스도의 은혜와 그를 아는 지식에서 자라 가라 영광이 이제와 영원한 날까지 그에게 있을지어다 ‘"
+        ]
+       ]
+      },
+      {
+       "ref": "2 Peter 3:17-18",
+       "version": "NASB",
+       "verses": [
+        [
+         "17",
+         "You therefore, beloved, knowing this beforehand, be on your guard so that you are not carried away by the error of unscrupulous people and lose your own firm commitment,"
+        ],
+        [
+         "18",
+         "but grow in the grace and knowledge of our Lord and Savior Jesus Christ. To Him be the glory, both now and to the day of eternity. Amen."
+        ]
+       ]
+      }
+     ]
     },
     {
      "name": "말씀듣기",
      "detail": "메시지성경",
-     "who": "다같이"
+     "who": "다같이",
+     "bible": [
+      {
+       "ref": "베드로후서 3:17-18",
+       "version": "메시지",
+       "verses": [
+        [
+         "17-18",
+         "그러나 친구 여러분, 여러분은 이미 훈계를 잘 받았습니다. 자기 마음대로 떠드는 불의한 교사들로 인해 발을 헛디뎌 넘어지는 일이 없도록, 정신을 바짝 차리십시오. 우리 주님이시며 구주이신 예수 그리스도의 은혜와, 그분을 아는 지식 안에서 자라 가십시오. 영광이 이제부터 영원토록, 주님께 있기를 바랍니다! 아멘!"
+        ]
+       ]
+      }
+     ]
     },
     {
      "name": "말씀묵상과 권면 · 나눔",

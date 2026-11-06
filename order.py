@@ -4,7 +4,7 @@
     python3 order.py --all        전부 다시
     python3 order.py --check      이번 주일 주보가 이미 있으면 0, 없으면 1로 끝남 (찾기 작업에서 사용)
 
-주보 틀(2026년 기준): 2~3쪽 예배순서, 8쪽 '공동체 소식'.
+주보 틀(2026년 기준): 2~3쪽 예배순서, 4쪽 '성경말씀'(개역개정·메시지 본문), 8쪽 '공동체 소식'.
   · 묶음 제목(예배로 나아감 …)과 광고 제목은 제목용 글꼴(Cafe24Dangdanghae)
   · 순서 한 줄은 '이름 ······ 내용 ······ 담당'
   · 인도자/성도들/다같이 표시는 작은 글씨(10pt)로 왼쪽에
@@ -193,6 +193,79 @@ def parse_news(lines):
     return news
 
 
+def parse_bible(lines):
+    """'성경말씀' 쪽: [ 갈라디아서 5:16-26, 개역개정 ] 아래 본문을 절별로."""
+    out, cur, buf = [], None, ''
+    def close():
+        if cur is not None:
+            cur['verses'] = verses(buf, cur['ref'])
+            if cur['verses']:
+                out.append(cur)
+    for l in lines:
+        if l['size'] >= 30:
+            continue
+        t = l['text']
+        m = re.match(r'^\[\s*(.+?)\s*,\s*(.+?)\s*\]$', t)
+        if m:
+            close()
+            cur, buf = {'ref': m.group(1), 'version': m.group(2)}, ''
+            continue
+        if cur is None:
+            continue
+        # 줄 끝에 띄어쓰기가 없으면 낱말이 다음 줄로 이어진 것
+        raw = ''.join(c['text'] for c in l['chars'])
+        buf += t + (' ' if raw.endswith(' ') else '')
+    close()
+    return out
+
+
+def verses(text, ref):
+    """'16 내가… 17 육체의…', '4.그들…', '16-18 …' 를 [['16', '…'], ['17', '…']] 로. 절 번호는 차례대로만 찾음."""
+    m = re.search(r':\s*(\d+)\s*-?\s*(\d+)?', ref)
+    text = re.sub(r'\s+', ' ', text).strip()
+    if not text:
+        return []
+    if not m:
+        return [['', text]]
+    first, last = int(m.group(1)), int(m.group(2) or m.group(1))
+    pat = r'(?:^|(?<=[\s.?!”’)\]]))(%d)(?:\s*-\s*(\d+))?(?:\.\s*|\s)'
+    n, pos, marks = first, 0, []
+    while n <= last + 1:
+        mm = re.compile(pat % n).search(text, pos)
+        if not mm and n > first:   # '22-23' 다음에 '23-24'처럼 겹쳐 시작하는 묶음
+            mm = re.compile(r'(?:^|(?<=[\s.?!”’)\]]))(%d)\s*-\s*(\d+)\s' % (n - 1)).search(text, pos)
+        if not mm:
+            break
+        marks.append((mm.start(), mm.end(), mm.group(1) + ('-' + mm.group(2) if mm.group(2) else '')))
+        n = int(mm.group(2) or mm.group(1)) + 1
+        pos = mm.end()
+    if not marks or (len(marks) == 1 and marks[0][0] > 0):
+        # 절 번호가 글 사이에 끼어 들어간 주보: 한글에 붙은 절 번호만 지우고 한 덩어리로
+        nums = '|'.join(str(i) for i in range(last, first - 1, -1))
+        text = re.sub(r'(?<=[가-힣])\s?(?:%s)(?:\s(?:%s))?(?=\s?[가-힣])' % (nums, nums), '', text)
+        return [['', text]]
+    out = [['', text[:marks[0][0]].strip()]] if marks[0][0] > 0 else []
+    for i, (a, b, num) in enumerate(marks):
+        end = marks[i + 1][0] if i + 1 < len(marks) else len(text)
+        out.append([num, text[b:end].strip()])
+    return [v for v in out if v[1]]
+
+
+def attach_bible(sections, bible):
+    """본문을 순서에 붙임: 메시지는 '메시지성경' 순서(말씀듣기)에, 나머지(개역개정·영어 등)는 말씀읽기에."""
+    items = [i for s in sections for i in s['items']]
+    read = next((i for i in items if i.get('scripture')), None)
+    hear = next((i for i in items if '메시지' in (i.get('detail') or '')), None)
+    left = []
+    for b in bible:
+        it = hear if '메시지' in b['version'] else read
+        if it:
+            it.setdefault('bible', []).append(b)
+        else:
+            left.append(b)
+    return left
+
+
 def parse(path):
     import pdfplumber   # --check 때는 설치 없이 바로 끝나도록 여기서 불러옴
     with pdfplumber.open(path) as pdf:
@@ -205,10 +278,14 @@ def parse(path):
     while end + 1 < len(all_lines) and any(is_leader(l) for l in all_lines[end + 1]):
         end += 1
     news_page = next((ls for ls in all_lines if '공동체소식' in first(ls)), [])
+    bible_page = next((ls for ls in all_lines if '성경말씀' in first(ls)), [])
+    sections = parse_order(all_lines[start:end + 1])
+    left = attach_bible(sections, parse_bible(bible_page))
     m = re.search(r'제(\d+)호', cover)
     return {
         'issue': int(m.group(1)) if m else None,
-        'sections': parse_order(all_lines[start:end + 1]),
+        'sections': sections,
+        **({'bible': left} if left else {}),
         'news': parse_news(news_page),
     }
 
