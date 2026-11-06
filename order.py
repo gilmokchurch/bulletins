@@ -17,8 +17,6 @@ import sys
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
-import pdfplumber
-
 PDF_DIR, OUT = 'pdf', 'order'
 SITE = 'https://theway.news'
 UA = 'Mozilla/5.0 (compatible; GilmokChurchSite/1.0; +https://theway.news)'
@@ -196,6 +194,7 @@ def parse_news(lines):
 
 
 def parse(path):
+    import pdfplumber   # --check 때는 설치 없이 바로 끝나도록 여기서 불러옴
     with pdfplumber.open(path) as pdf:
         all_lines = [page_lines(p) for p in pdf.pages]
         cover = re.sub(r'\s+', '', pdf.pages[0].extract_text() or '')
