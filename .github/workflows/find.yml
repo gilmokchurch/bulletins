@@ -1,0 +1,69 @@
+# 이번 주 주보 찾기: 금요일 오후 4시부터 토요일 밤 11시까지(한국 시간) 30분마다.
+# 이번 주일 주보를 찾아 예배순서를 뽑고 나면, 그 주의 나머지 시간에는 바로 끝냄.
+# (GitHub의 예약 실행은 붐비는 시간에 몇 분~20분쯤 늦게 시작될 수 있음)
+name: 이번 주 주보 찾기
+
+on:
+  schedule:
+    # GitHub 예약 시간은 UTC (한국 시간 - 9시간)
+    - cron: '0,30 7-23 * * 5'   # 금 16:00 ~ 토 08:30
+    - cron: '0,30 0-13 * * 6'   # 토 09:00 ~ 22:30
+    - cron: '0 14 * * 6'        # 토 23:00 (마지막)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: sync
+  cancel-in-progress: false
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 이미 찾았는지 확인
+        id: have
+        run: |
+          if python3 order.py --check; then
+            echo "이번 주 예배순서가 이미 있어 끝냅니다."
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.have.outputs.found != 'true'
+        name: 주보 내려받고 예배순서 뽑기
+        run: |
+          pip install --quiet pdfplumber
+          python3 sync.py pdf
+          python3 order.py
+
+      - if: steps.have.outputs.found != 'true'
+        name: 바뀐 것 저장
+        id: save
+        run: |
+          git add pdf order
+          if git diff --cached --quiet; then
+            echo "아직 새 주보가 없습니다."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "이번 주 주보와 예배순서"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.save.outputs.changed == 'true'
+        uses: actions/configure-pages@v5
+      - if: steps.save.outputs.changed == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - if: steps.save.outputs.changed == 'true'
+        uses: actions/deploy-pages@v4
