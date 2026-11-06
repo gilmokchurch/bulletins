@@ -1,4 +1,4 @@
-"""블로그의 주보 PDF를 pdf/<글번호>.pdf 로 복사합니다. 이미 있는 파일은 건너뜁니다.
+"""블로그의 주보 PDF를 pdf/<글번호>.pdf 로 복사합니다. 이미 있는 파일은 건너뛰고, 3개월이 지난 사본은 지웁니다.
 
 홈페이지(theway.news)의 주보 목록에서 글 번호를 받고, PDF는 블로그 글 페이지의 링크에서 바로 내려받습니다.
 """
@@ -8,7 +8,9 @@ import os
 import re
 import sys
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
+KEEP_DAYS = 92   # 약 3개월 동안의 주보만 사본으로 둠
 SITE = 'https://theway.news'
 BLOG = 'https://thewaynews.tistory.com'
 UA = 'Mozilla/5.0 (compatible; GilmokChurchSite/1.0; +https://theway.news)'
@@ -36,13 +38,31 @@ def find_pdfs(page):
     return out
 
 
+def recent(p):
+    """블로그에 올린 날이 KEEP_DAYS일 안이면 True."""
+    try:
+        at = datetime.fromisoformat(str(p.get('date', '')).replace('Z', '+00:00'))
+    except ValueError:
+        return False
+    return at >= datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
     items = json.loads(get(f'{SITE}/api/posts?type=bulletin&limit=30'))['items']
+    keep = {re.sub(r'\D', '', str(p.get('id', ''))) for p in items if p.get('hasPdf') and recent(p)}
+    keep.discard('')
+    # 3개월이 지난 사본은 지움 (홈페이지에서는 이 서버 대신 블로그 파일을 거쳐 열림)
+    # 목록을 제대로 못 받았을 때 모두 지우는 일이 없도록, 남길 주보가 있을 때만
+    if keep:
+        for name in sorted(os.listdir(OUT)):
+            if name.endswith('.pdf') and name[:-4] not in keep:
+                os.remove(os.path.join(OUT, name))
+                print(name[:-4], 'removed (older than', KEEP_DAYS, 'days)')
     failed = 0
     for p in items:
         pid = re.sub(r'\D', '', str(p.get('id', '')))
-        if not pid or not p.get('hasPdf'):
+        if pid not in keep:
             continue
         dest = os.path.join(OUT, pid + '.pdf')
         if os.path.exists(dest):
