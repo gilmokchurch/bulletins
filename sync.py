@@ -1,4 +1,6 @@
 """블로그의 주보 PDF를 pdf/<글번호>.pdf 로 복사합니다. 이미 있는 파일은 건너뛰고, 3개월이 지난 사본은 지웁니다.
+--recheck 를 붙이면 올린 지 10일이 안 된 주보를 다시 받아 보고, 글 수정으로 파일이 바뀌었으면 사본도 바꿉니다.
+(금요일 오후 ~ 주일 오전 9시의 '이번 주 주보 찾기' 작업만 이렇게 실행)
 
 홈페이지(theway.news)의 주보 목록에서 글 번호를 받고, PDF는 블로그 글 페이지의 링크에서 바로 내려받습니다.
 """
@@ -11,10 +13,12 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 KEEP_DAYS = 92   # 약 3개월 동안의 주보만 사본으로 둠
+EDIT_DAYS = 10   # --recheck 때, 올린 지 이만큼 안 된 주보는 파일이 바뀌었는지 확인
 SITE = 'https://theway.news'
 BLOG = 'https://thewaynews.tistory.com'
 UA = 'Mozilla/5.0 (compatible; GilmokChurchSite/1.0; +https://theway.news)'
-OUT = sys.argv[1] if len(sys.argv) > 1 else 'pdf'
+RECHECK = '--recheck' in sys.argv
+OUT = next((a for a in sys.argv[1:] if not a.startswith('--')), 'pdf')
 
 
 def get(url, referer=None, timeout=60):
@@ -38,13 +42,13 @@ def find_pdfs(page):
     return out
 
 
-def recent(p):
-    """블로그에 올린 날이 KEEP_DAYS일 안이면 True."""
+def recent(p, days=KEEP_DAYS):
+    """블로그에 올린 날이 days일 안이면 True."""
     try:
         at = datetime.fromisoformat(str(p.get('date', '')).replace('Z', '+00:00'))
     except ValueError:
         return False
-    return at >= datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)
+    return at >= datetime.now(timezone.utc) - timedelta(days=days)
 
 
 def main():
@@ -65,8 +69,12 @@ def main():
         if pid not in keep:
             continue
         dest = os.path.join(OUT, pid + '.pdf')
+        old = None
         if os.path.exists(dest):
-            continue
+            if not (RECHECK and recent(p, EDIT_DAYS)):
+                continue
+            with open(dest, 'rb') as f:
+                old = f.read()
         try:
             page = get(f'{BLOG}/{pid}').decode('utf-8', 'replace')
         except Exception as e:
@@ -78,10 +86,12 @@ def main():
             except Exception as e:
                 print(pid, 'download error', e); continue
             if data[:5] == b'%PDF-':
-                with open(dest, 'wb') as f:
-                    f.write(data)
-                print(pid, 'saved', len(data)); ok = True; break
-        if not ok:
+                if data != old:
+                    with open(dest, 'wb') as f:
+                        f.write(data)
+                    print(pid, 'replaced (file changed on the blog)' if old else 'saved', len(data))
+                ok = True; break
+        if not ok and old is None:
             print(pid, 'no pdf'); failed += 1
     print('done, failed:', failed)
 

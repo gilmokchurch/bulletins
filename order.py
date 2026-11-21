@@ -1,6 +1,6 @@
 """주보 PDF에서 예배순서와 광고(공동체 소식)를 뽑아 order/<글번호>.json 으로 저장하고, order/index.json(목록)을 다시 만듭니다.
 
-    python3 order.py              pdf/ 안의 주보 중 아직 뽑지 않은 것만
+    python3 order.py              pdf/ 안의 주보 중 아직 뽑지 않았거나, 뽑은 뒤에 PDF가 바뀐 것만
     python3 order.py --all        전부 다시
     python3 order.py --check      이번 주일 주보가 이미 있으면 0, 없으면 1로 끝남 (찾기 작업에서 사용)
 
@@ -9,7 +9,9 @@
   · 순서 한 줄은 '이름 ······ 내용 ······ 담당'
   · 인도자/성도들/다같이 표시는 작은 글씨(10pt)로 왼쪽에
 PDF는 3개월 뒤 지워지지만, 뽑아 둔 json은 계속 남겨 지난 주보 목록으로 씁니다.
+같은 주일의 주보가 여러 글로 올라와 있으면(고쳐서 새 글로 다시 올린 경우) 가장 나중 것만 남깁니다.
 """
+import hashlib
 import json
 import os
 import re
@@ -327,8 +329,17 @@ def main():
     for name in sorted(os.listdir(PDF_DIR)):
         pid = name[:-4]
         dest = os.path.join(OUT, pid + '.json')
-        if not name.endswith('.pdf') or (os.path.exists(dest) and not redo):
+        if not name.endswith('.pdf'):
             continue
+        # 어느 PDF에서 뽑았는지 적어 두고, 글 수정으로 PDF가 바뀌었으면 다시 뽑음
+        with open(os.path.join(PDF_DIR, name), 'rb') as f:
+            mark = hashlib.sha1(f.read()).hexdigest()[:16]
+        if os.path.exists(dest) and not redo:
+            try:
+                if json.load(open(dest, encoding='utf-8')).get('pdf') == mark:
+                    continue
+            except ValueError:
+                pass
         try:
             d = parse(os.path.join(PDF_DIR, name))
         except Exception as e:
@@ -339,7 +350,7 @@ def main():
         sunday = sunday_of(p).isoformat() if p else (by_id.get(pid) or {}).get('sunday')
         if not sunday:
             print(pid, 'no date'); continue
-        d = {'id': pid, 'sunday': sunday, **d}
+        d = {'id': pid, 'sunday': sunday, 'pdf': mark, **d}
         with open(dest, 'w', encoding='utf-8') as f:
             json.dump(d, f, ensure_ascii=False, indent=1)
         its = [i for s in d['sections'] for i in s['items']]
@@ -347,6 +358,19 @@ def main():
         who = next((i.get('who') for i in its if i.get('preacher')), None)
         by_id[pid] = {'id': pid, 'sunday': sunday, 'issue': d['issue'], 'word': word, 'preacher': who}
         print(pid, sunday, 'ok', len(its), 'items', len(d['news']), 'news')
+    # 주보를 고쳐 새 글로 다시 올리면 같은 주일의 글 번호가 여러 개 생김:
+    # 한 주일에 하나만 남김 (블로그에 지금 있는 글 먼저, 그다음 글 번호가 큰 것 = 나중에 올린 것)
+    best = {}
+    for e in by_id.values():
+        rank = (e['id'] in info, int(e['id']))
+        if e['sunday'] not in best or rank > best[e['sunday']][0]:
+            best[e['sunday']] = (rank, e['id'])
+    for pid in [i for i, e in by_id.items() if best[e['sunday']][1] != i]:
+        del by_id[pid]
+        old = os.path.join(OUT, pid + '.json')
+        if os.path.exists(old):
+            os.remove(old)
+        print(pid, 'removed (replaced by a newer post for the same Sunday)')
     index = sorted(by_id.values(), key=lambda e: e['sunday'], reverse=True)
     with open(index_path, 'w', encoding='utf-8') as f:
         json.dump(index, f, ensure_ascii=False, indent=1)
